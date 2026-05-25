@@ -51,8 +51,14 @@ To deploy onto a Dwarf on the local network:
 - The recipe pins to a specific branch of the fork. Bump
   `NEURAL_AMP_MODELER_VERSION` (commit SHA preferred for reproducibility)
   and `NEURAL_AMP_MODELER_SITE` when promoting a release.
-- gcc 12 toolchain (provided by mod-plugin-builder for `moddwarf-new`)
-  fully supports the C++20 features used by NeuralAudio.
+- The `moddwarf-new` toolchain shipped by mod-plugin-builder uses
+  **gcc 9.4** (crosstool-ng 1.25.0). That predates the final C++20
+  standard, but supports the draft via `-std=c++2a`. NeuralAudio's
+  actual C++20 usage is minimal (mostly `if constexpr`, which is
+  C++17, plus one `std::bit_cast` in `math_approx` that already has a
+  `#if !__cpp_lib_bit_cast` fallback), so the build works with the
+  draft flag. The recipe therefore does **not** force `-std=gnu++20`;
+  it lets CMake's standard auto-selection pick `-std=c++2a`.
 - `BUILD_STATIC_RTNEURAL` is intentionally OFF: it produces a large set of
   template instantiations that bloat the binary without helping NAM
   models. Flip it ON if you need static RTNeural model paths.
@@ -60,8 +66,9 @@ To deploy onto a Dwarf on the local network:
   convention). Set `BR2_SKIP_LTO=1` in the build environment if you hit
   RAM pressure during the build.
 - `DUSE_NATIVE_ARCH=OFF` is forced — `mod-plugin-builder` already injects
-  the correct `-mcpu=cortex-a53 -mtune=cortex-a53` (or equivalent) via
-  `TARGET_CFLAGS` / `TARGET_CXXFLAGS`.
+  the correct `-mcpu`/`-mtune` (Cortex-A35 baseline on the current
+  moddwarf-new toolchain) and `-march=armv8-a+...` via `TARGET_CFLAGS` /
+  `TARGET_CXXFLAGS`.
 
 ## Performance expectations on the Dwarf
 

@@ -43,9 +43,13 @@ NEURAL_AMP_MODELER_CONF_OPTS += -DLSTM_MATH=FastMath
 # RTNeural backend: Eigen (NEON-vectorised on aarch64)
 NEURAL_AMP_MODELER_CONF_OPTS += -DRTNEURAL_EIGEN=ON
 
-# Toolchain flags. C++20 is required by NeuralAudio; gcc 12 supports it fully.
+# Toolchain flags. moddwarf-new ships gcc 9.4 (crosstool-ng 1.25.0), which
+# predates the final C++20 standard. We pass -std=c++2a (the draft alias gcc
+# 9.4 understands) explicitly; the C++20 features NeuralAudio actually uses
+# work under this draft (if constexpr is C++17 anyway, and math_approx's
+# std::bit_cast usage has a #if !__cpp_lib_bit_cast fallback).
 NEURAL_AMP_MODELER_CONF_OPTS += -DCMAKE_C_FLAGS="$(TARGET_CFLAGS) $(NEURAL_AMP_MODELER_TARGET_OPT)"
-NEURAL_AMP_MODELER_CONF_OPTS += -DCMAKE_CXX_FLAGS="$(TARGET_CXXFLAGS) $(NEURAL_AMP_MODELER_TARGET_OPT) -std=gnu++20"
+NEURAL_AMP_MODELER_CONF_OPTS += -DCMAKE_CXX_FLAGS="$(TARGET_CXXFLAGS) $(NEURAL_AMP_MODELER_TARGET_OPT) -std=c++2a"
 NEURAL_AMP_MODELER_CONF_OPTS += -DCMAKE_SHARED_LINKER_FLAGS="$(TARGET_LDFLAGS) $(NEURAL_AMP_MODELER_TARGET_OPT)"
 
 # NeuralAudio + RTNeural + Eigen are git submodules; we need them all.
