@@ -75,5 +75,21 @@ run NAM models, but only the smaller variants comfortably:
 | `lite`      | tight                     |
 | `standard`  | usually too heavy         |
 
-Use the `Quality` knob (port `quality_scale`) to trade fidelity for CPU
-on dynamic RTNeural models.
+Use the `Quality` knob (port `quality_scale`, range 0..1) to trade
+fidelity for CPU at runtime. It is wired through NeuralAudio's
+`SetQualityScaleFactor()` and applies to any model that reports
+`HasQualityScaling() == true`:
+
+- **NAM A2 WaveNet (slimmable)** — the knob calls
+  `nam::SlimmableModel::SetSlimmableSize()` and dynamically resizes the
+  network's channels/bottleneck. This is the most useful target on the
+  Dwarf.
+- **Dynamic RTNeural models** that expose a slimmable variant.
+
+Older non-slimmable NAM models ignore the knob (their
+`HasQualityScaling()` returns `false`); pick a smaller pre-trained model
+in that case.
+
+The `NAM_ENABLE_A2_FAST=ON` option in the recipe also enables NAM Core's
+A2 fast-path WaveNet implementation, which is hand-tuned around NEON
+register usage on aarch64.
