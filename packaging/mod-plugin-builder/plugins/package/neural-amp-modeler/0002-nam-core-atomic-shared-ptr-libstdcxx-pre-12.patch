@@ -1,0 +1,66 @@
+From: pilali
+Subject: [PATCH] NAM Core: fall back to atomic_* free fns on libstdc++ pre-gcc-12
+
+slimmable.h declares std::atomic<std::shared_ptr<StagedSlimModel>>, which
+is the C++20 P0718 specialisation. libstdc++ only ships it from gcc 12
+onwards (libc++ never provides it). The upstream code already has a
+libc++ workaround using the deprecated std::atomic_* free function
+overloads on shared_ptr (declared in <memory>, available since C++11),
+gated on _LIBCPP_VERSION.
+
+On gcc 9.4 (the compiler shipped with moddwarf-new's mod-plugin-builder
+toolchain) the build fails with:
+
+    static_assert(__is_trivially_copyable(_Tp),
+                  "std::atomic requires a trivially copyable type");
+
+Generalise the fallback to also apply when __cpp_lib_atomic_shared_ptr
+is not defined — the standard feature-test macro for the P0718
+specialisation. Introduce a single internal macro
+NAM_SLIMMABLE_USES_FREE_ATOMIC_SHARED_PTR so the .cpp doesn't have to
+repeat the probe.
+
+--- a/deps/NeuralAudio/deps/NeuralAmpModelerCore/NAM/wavenet/slimmable.h
++++ b/deps/NeuralAudio/deps/NeuralAmpModelerCore/NAM/wavenet/slimmable.h
+@@ -2,11 +2,15 @@
+
+ #include <memory>
+ #include <vector>
++#include <atomic>
+
+-#ifdef _LIBCPP_VERSION
+-// libc++: std::atomic<std::shared_ptr<T>> is not viable; staging uses deprecated atomic_* free functions.
+-#else
+-  #include <atomic>
++// std::atomic<std::shared_ptr<T>> is the C++20 specialisation (P0718).
++// libc++ does not provide it; libstdc++ provides it starting with gcc 12.
++// When it's unavailable we fall back to the std::atomic_* free function
++// overloads on shared_ptr — deprecated in C++20 but available since C++11
++// in both standard libraries (declared in <memory>).
++#if defined(_LIBCPP_VERSION) || !defined(__cpp_lib_atomic_shared_ptr)
++#  define NAM_SLIMMABLE_USES_FREE_ATOMIC_SHARED_PTR 1
+ #endif
+
+ #include "../dsp.h"
+@@ -70,8 +74,8 @@
+     std::shared_ptr<DSP> model;
+     std::vector<int> channels;
+   };
+-#ifdef _LIBCPP_VERSION
+-  /// Staged model; synchronized via deprecated std::atomic_* overloads for shared_ptr only.
++#ifdef NAM_SLIMMABLE_USES_FREE_ATOMIC_SHARED_PTR
++  /// Staged model; synchronised via the std::atomic_* free function overloads on shared_ptr.
+   std::shared_ptr<StagedSlimModel> _pending_staged;
+ #else
+   std::atomic<std::shared_ptr<StagedSlimModel>> _pending_staged;
+--- a/deps/NeuralAudio/deps/NeuralAmpModelerCore/NAM/wavenet/slimmable.cpp
++++ b/deps/NeuralAudio/deps/NeuralAmpModelerCore/NAM/wavenet/slimmable.cpp
+@@ -291,7 +291,7 @@
+
+ } // anonymous namespace
+
+-#ifdef _LIBCPP_VERSION
++#ifdef NAM_SLIMMABLE_USES_FREE_ATOMIC_SHARED_PTR
+ void SlimmableWavenet::_pending_clear_release()
+ {
+   std::atomic_store_explicit(&_pending_staged, std::shared_ptr<StagedSlimModel>{}, std::memory_order_release);

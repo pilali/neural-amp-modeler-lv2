@@ -1,0 +1,33 @@
+From: pilali
+Subject: [PATCH] NAM Core: undef glibc's major/minor macros before nam::Version
+
+glibc's <sys/types.h> (pulled in transitively by <fstream>, <memory>, etc.)
+defines major() and minor() as macros that expand to gnu_dev_major /
+gnu_dev_minor. They collide with the homonymous data members of
+nam::Version, so the preprocessor rewrites the constructor's initialiser
+list to gnu_dev_major(major) and the build fails with:
+
+    error: class 'nam::Version' does not have any field named 'gnu_dev_major'
+
+glibc 2.28+ gates these macros behind _DEFAULT_SOURCE, but moddwarf-new's
+sysroot ships glibc 2.27, where they're still leaked unconditionally.
+
+Undef them locally in get_dsp.h, after the headers that pull <sys/types.h>
+in transitively. No-op on systems where the macros aren't defined.
+
+--- a/deps/NeuralAudio/deps/NeuralAmpModelerCore/NAM/get_dsp.h
++++ b/deps/NeuralAudio/deps/NeuralAmpModelerCore/NAM/get_dsp.h
+@@ -6,6 +6,13 @@
+
+ #include "dsp.h"
+
++// glibc's <sys/types.h> (pulled in transitively by <fstream>, <memory>, …)
++// exposes major()/minor() as macros on glibc < 2.28 (moddwarf-new's sysroot
++// ships glibc 2.27). They shadow the Version members below — the
++// preprocessor would rewrite them to gnu_dev_major / gnu_dev_minor.
++#undef major
++#undef minor
++
+ namespace nam
+ {
+ enum class Supported

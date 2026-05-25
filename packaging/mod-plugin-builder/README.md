@@ -11,12 +11,40 @@ packaging/mod-plugin-builder/
 └── plugins/
     └── package/
         └── neural-amp-modeler/
-            └── neural-amp-modeler.mk
+            ├── neural-amp-modeler.mk
+            ├── 0001-nam-core-undef-major-minor.patch
+            └── 0002-nam-core-atomic-shared-ptr-libstdcxx-pre-12.patch
 ```
 
 The layout mirrors what `mod-plugin-builder` expects under
 `plugins/package/<plugin-name>/`. Buildroot auto-discovers the package by
-its directory name, no `Config.in` snippet is needed.
+its directory name (no `Config.in` snippet needed) and auto-applies the
+`*.patch` files after extract.
+
+### About the patches
+
+Two upstream NAM Core issues prevent the build from succeeding with the
+moddwarf-new toolchain (gcc 9.4 + glibc 2.27):
+
+1. **`0001-nam-core-undef-major-minor.patch`** — `<sys/types.h>` on
+   glibc < 2.28 leaks `major()` / `minor()` as macros that expand to
+   `gnu_dev_major` / `gnu_dev_minor`. They collide with the data members
+   of `nam::Version`. The patch adds `#undef major` / `#undef minor`
+   after the includes in `get_dsp.h`. No-op on newer glibc.
+
+2. **`0002-nam-core-atomic-shared-ptr-libstdcxx-pre-12.patch`** —
+   `SlimmableWavenet` uses `std::atomic<std::shared_ptr<T>>` (the
+   C++20 P0718 specialisation). libstdc++ only ships it from gcc 12
+   onward; gcc 9.4 errors with `std::atomic requires a trivially
+   copyable type`. NAM Core already has a libc++ workaround using the
+   deprecated `std::atomic_*` free function overloads on `shared_ptr`
+   (declared in `<memory>`, available since C++11). The patch
+   generalises that fallback to also trigger when
+   `__cpp_lib_atomic_shared_ptr` is undefined (i.e. libstdc++ pre-12).
+
+Both patches are safe upstream candidates; the second in particular
+would benefit any libstdc++ < 12 environment. A PR against
+NeuralAmpModelerCore would let us drop both patches eventually.
 
 ## Installing the recipe
 
