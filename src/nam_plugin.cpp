@@ -96,6 +96,12 @@ namespace NAM {
 		if (options != nullptr)
 			options_set(this, options);
 
+		// Ensure the buffered DSP rings exist even if the host never advertised
+		// bufSize:maxBlockLength (some minimal hosts don't). Sized for the
+		// current maxBufferSize, which is the default (512) unless options_set
+		// already raised it via set_max_buffer_size above.
+		allocate_buffered_rings(maxBufferSize);
+
 		return true;
 	}
 
@@ -410,7 +416,7 @@ namespace NAM {
 				// do very basic smoothing
 				level = (.99f * level) + (.01f * desiredOutputLevel);
 
-				ports.audio_out[i] = ports.audio_out[i] * outputLevel;
+				ports.audio_out[i] = ports.audio_out[i] * level;
 			}
 
 			outputLevel = level;
@@ -465,24 +471,29 @@ namespace NAM {
 		}
 		bufferedInFill += n_samples;
 
-		// 2. Process as many full blocks as we have queued. The model runs
-		//    in-place on the head of the input ring; we then copy the processed
-		//    block into the output ring and shift the remaining samples down.
-		while (bufferedInFill >= static_cast<size_t>(kBufferedBlockSize) &&
-		       bufferedOutFill + kBufferedBlockSize <= bufferedOut.size())
+		// 2. Process as many full blocks as we have queued. The model writes
+		//    directly into the output ring (Process supports distinct in/out
+		//    pointers), so we avoid an extra memcpy per block. Consumed input
+		//    samples accumulate in inOffset; we collapse them with a single
+		//    memmove after the loop instead of shifting once per block.
+		const size_t outCapacity = bufferedOut.size();
+		size_t inOffset = 0;
+		while (bufferedInFill - inOffset >= static_cast<size_t>(kBufferedBlockSize) &&
+		       bufferedOutFill + kBufferedBlockSize <= outCapacity)
 		{
-			currentModel->Process(bufferedIn.data(), bufferedIn.data(), kBufferedBlockSize);
-
-			std::memcpy(bufferedOut.data() + bufferedOutFill,
-			            bufferedIn.data(),
-			            kBufferedBlockSize * sizeof(float));
+			currentModel->Process(bufferedIn.data() + inOffset,
+			                      bufferedOut.data() + bufferedOutFill,
+			                      kBufferedBlockSize);
+			inOffset += kBufferedBlockSize;
 			bufferedOutFill += kBufferedBlockSize;
-
-			const size_t remaining = bufferedInFill - kBufferedBlockSize;
+		}
+		if (inOffset > 0)
+		{
+			const size_t remaining = bufferedInFill - inOffset;
 			if (remaining > 0)
 			{
 				std::memmove(bufferedIn.data(),
-				             bufferedIn.data() + kBufferedBlockSize,
+				             bufferedIn.data() + inOffset,
 				             remaining * sizeof(float));
 			}
 			bufferedInFill = remaining;

@@ -37,7 +37,13 @@ static void connect_port(LV2_Handle instance, uint32_t port, void* data)
 {
 	auto nam = static_cast<NAM::Plugin*>(instance);
 
-	*(reinterpret_cast<void**>(&nam->ports)+port) = data;
+	// Treat the Ports struct as an array of void* slots. Bounds-check against
+	// the declared port count so a host passing a bogus index can't corrupt
+	// adjacent Plugin members. Keep in sync with the Ports struct layout.
+	constexpr uint32_t kPortCount = sizeof(NAM::Plugin::Ports) / sizeof(void*);
+	if (port >= kPortCount) return;
+
+	*(reinterpret_cast<void**>(&nam->ports) + port) = data;
 }
 
 static void activate(LV2_Handle) {}
