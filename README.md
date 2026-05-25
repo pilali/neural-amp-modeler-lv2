@@ -56,8 +56,14 @@ After building, the plugin will be in **build/neural_amp_modeler.lv2**.
 
 ## CMake Options
 
-```-DUSE_NATIVE_ARCH=ON```: If you have a relatively modern x64 processor, you can pass ```-DUSE_NATIVE_ARCH=ON``` on your cmake command line to enable certain processor-specific optimizations.
+```-DUSE_NATIVE_ARCH=ON```: If you have a relatively modern x64 processor, you can pass ```-DUSE_NATIVE_ARCH=ON``` on your cmake command line to enable certain processor-specific optimizations. On aarch64 this enables `-mcpu=native`.
 
 ```-DSMART_BYPASS_ENABLED=ON```: If enabled, this will bypass model processing if input has been silent (below -100 dB by default) for a sufficient number of samples (determined by the model's receptive field size).
 
+```-DMOD_BUILD=ON```: Targets a MOD device via `mod-plugin-builder`. Disables `-Ofast`, CMake-driven IPO/LTO, and any host-specific `-march` flags so the cross toolchain owns optimization. You don't normally set this by hand — the recipe in `packaging/mod-plugin-builder/` does it for you.
+
 Also see the [NeuralAudio CMake options](https://github.com/mikeoliphant/NeuralAudio#cmake-options) - adding these to your neural-amp-modeler-lv2 cmake will pass them to the NeuralAudio build.
+
+## Building for MOD Dwarf
+
+See [`packaging/mod-plugin-builder/README.md`](packaging/mod-plugin-builder/README.md) for the recipe and build instructions targeting `moddwarf-new` via `mod-plugin-builder`.

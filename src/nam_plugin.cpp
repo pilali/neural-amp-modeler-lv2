@@ -279,7 +279,7 @@ namespace NAM {
 			{
 				for (unsigned int i = 0; i < n_samples; i++)
 				{
-					if (abs(ports.audio_in[i]) <= bypassThresholdLinear)
+					if (std::fabs(ports.audio_in[i]) <= bypassThresholdLinear)
 					{
 						silentSamples++;
 					}

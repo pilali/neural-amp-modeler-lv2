@@ -9,6 +9,11 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED OFF)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# MOD_BUILD: target a MOD device (e.g. ModDwarf) via mod-plugin-builder.
+# When ON, we let the cross-toolchain own optimization flags, skip CMake-driven
+# IPO/LTO (the recipe injects -flto via TARGET_OPT), and don't force -Ofast.
+option(MOD_BUILD "Build for MOD devices (cross-compile via mod-plugin-builder)" OFF)
+
 if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
 	include_directories(SYSTEM /usr/local/include)
 elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
