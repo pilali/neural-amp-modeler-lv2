@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <random>
 #include <string_view>
+#include <vector>
 
 // LV2
 #include <lv2/core/lv2.h>
@@ -28,6 +29,11 @@
 
 namespace NAM {
 	static constexpr unsigned int MAX_FILE_NAME = 1024;
+
+	// Fixed block size for the buffered DSP wrapper. Matches WAVENET_MAX_NUM_FRAMES
+	// in the NeuralAudio recipe so the WaveNet template's internal chunking is
+	// always saturated when buffered mode is active.
+	static constexpr int kBufferedBlockSize = 64;
 
 	enum LV2WorkType {
 		kWorkTypeLoad,
@@ -61,6 +67,7 @@ namespace NAM {
 			float* input_level;
 			float* output_level;
 			float* quality_scale;
+			float* buffered;
 		};
 
 		Ports ports = {};
@@ -94,7 +101,7 @@ namespace NAM {
 			uint32_t size, const void* data);
 		static LV2_Worker_Status work_response(LV2_Handle instance, uint32_t size, const void* data);
 
-		static LV2_State_Status save(LV2_Handle instance, LV2_State_Store_Function store, LV2_State_Handle handle, uint32_t flags, 
+		static LV2_State_Status save(LV2_Handle instance, LV2_State_Store_Function store, LV2_State_Handle handle, uint32_t flags,
 			const LV2_Feature* const* features);
 		static LV2_State_Status restore(LV2_Handle instance, LV2_State_Retrieve_Function retrieve, LV2_State_Handle handle, uint32_t flags,
 			const LV2_Feature* const* features);
@@ -126,5 +133,21 @@ namespace NAM {
 		float bypassThresholdLinear = 0;
 		uint32_t silentSamples = 0;
 		bool smartBypassed = true;
+
+		// Buffered DSP wrapper state. The two vectors are pre-allocated to
+		// (maxBufferSize + kBufferedBlockSize) floats so process_buffered() never
+		// allocates on the audio thread. Both behave as linear queues: writes
+		// append at *Fill, reads consume from index 0 and shift the rest with
+		// memmove (amortised O(1) per sample for the buffer sizes we see).
+		std::vector<float> bufferedIn;
+		std::vector<float> bufferedOut;
+		size_t bufferedInFill = 0;
+		size_t bufferedOutFill = 0;
+		bool bufferedModePrev = true;
+
+		void process_unbuffered(uint32_t n_samples) noexcept;
+		void process_buffered(uint32_t n_samples) noexcept;
+		void allocate_buffered_rings(int maxAudioBufferSize);
+		void reset_buffered_rings() noexcept;
 	};
 }
