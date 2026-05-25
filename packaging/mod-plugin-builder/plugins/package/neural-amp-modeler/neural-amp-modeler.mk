@@ -4,9 +4,12 @@
 #
 ######################################
 
-# Pin to a specific commit (or branch tip) of the fork we publish from.
-# Update both VERSION and SITE when bumping.
-NEURAL_AMP_MODELER_VERSION = claude/neural-amp-moddwarf-port-SS1D1
+# Pin to a specific commit so Buildroot's dl/ cache invalidates whenever we
+# bump the SHA. Branch-name VERSIONs are treated as immutable by Buildroot —
+# once the tarball is cached it's never refetched, even if the branch tip
+# advances. Bump VERSION explicitly when you want a new build to pick up
+# new commits, and run `make neural-amp-modeler-dirclean` to be safe.
+NEURAL_AMP_MODELER_VERSION = 49f1081b931639e7c0f7a9e5a9e85226df9ee375
 NEURAL_AMP_MODELER_SITE = https://github.com/pilali/neural-amp-modeler-lv2.git
 NEURAL_AMP_MODELER_SITE_METHOD = git
 NEURAL_AMP_MODELER_BUNDLES = neural_amp_modeler.lv2
