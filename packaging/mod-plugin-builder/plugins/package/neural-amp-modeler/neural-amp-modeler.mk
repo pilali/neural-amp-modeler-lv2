@@ -28,7 +28,13 @@ NEURAL_AMP_MODELER_CONF_OPTS  = -DCMAKE_BUILD_TYPE=Release
 NEURAL_AMP_MODELER_CONF_OPTS += -DCMAKE_INSTALL_PREFIX=/usr
 NEURAL_AMP_MODELER_CONF_OPTS += -DMOD_BUILD=ON
 NEURAL_AMP_MODELER_CONF_OPTS += -DUSE_NATIVE_ARCH=OFF
-NEURAL_AMP_MODELER_CONF_OPTS += -DSMART_BYPASS_ENABLED=ON
+# SMART_BYPASS_ENABLED stays OFF on the Dwarf: the bypass uses the model's
+# receptive field, which is only > -1 for the InternalWaveNetModelT /
+# InternalLSTMModelT templates. RTNeural models report -1 and skip the
+# bypass entirely, so the symptom "RTNeural works, NAM does not" maps
+# exactly to a stale smart-bypass trigger. Saving CPU on silence isn't
+# worth the debugging cost — feather/nano models are cheap to run idle.
+NEURAL_AMP_MODELER_CONF_OPTS += -DSMART_BYPASS_ENABLED=OFF
 NEURAL_AMP_MODELER_CONF_OPTS += -DDISABLE_DENORMALS=ON
 
 # NeuralAudio knobs (forwarded by add_subdirectory)
