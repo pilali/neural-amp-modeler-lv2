@@ -17,14 +17,10 @@
     border-radius:40px;
 }
 
-/* = BUFFERED DSP TOGGLE
-================================================
-   The blue toggle in the centre of the pedal drives the "buffered" port.
-   Re-uses the legacy bypass_on/off.png artwork (visually a toggle, not a
-   footswitch). The MOD host renders the standard bypass control itself,
-   so the plugin no longer owns one in the icon. */
-.mod-pedal-nam .mod-buffered-switch {
-    background-image:url(/resources/bypass_off.png{{{ns}}});
+/* = BYPASS
+================================================ */
+.mod-pedal-nam .mod-footswitch {
+    background-image:url(/resources/bypass_on.png{{{ns}}});
     background-position:center center;
     background-repeat:no-repeat;
     background-size:82px 47px;
@@ -35,8 +31,8 @@
     cursor:pointer;
     position:absolute;
 }
-.mod-pedal-nam .mod-buffered-switch.on {
-    background-image:url(/resources/bypass_on.png{{{ns}}});
+.mod-pedal-nam .mod-footswitch.on {
+    background-image:url(/resources/bypass_off.png{{{ns}}});
 }
 
 /* = KNOBS

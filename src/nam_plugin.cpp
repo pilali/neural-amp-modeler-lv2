@@ -96,12 +96,6 @@ namespace NAM {
 		if (options != nullptr)
 			options_set(this, options);
 
-		// Ensure the buffered DSP rings exist even if the host never advertised
-		// bufSize:maxBlockLength (some minimal hosts don't). Sized for the
-		// current maxBufferSize, which is the default (512) unless options_set
-		// already raised it via set_max_buffer_size above.
-		allocate_buffered_rings(maxBufferSize);
-
 		return true;
 	}
 
@@ -194,11 +188,6 @@ namespace NAM {
 		nam->currentModelPath = msg->path;
 		assert(nam->currentModelPath.capacity() >= MAX_FILE_NAME + 1);
 
-		// Any in-flight samples in the buffered DSP rings belong to the previous
-		// model, so flush them. Brief click on model change is expected; better
-		// than a chunk of pre-processed audio surfacing through the new model.
-		nam->reset_buffered_rings();
-
 		if (nam->currentModel != nullptr)
 		{
 			int receptiveFieldSize = nam->currentModel->GetReceptiveFieldSize();
@@ -225,30 +214,6 @@ namespace NAM {
 		maxBufferSize = size;
 
 		NeuralAudio::NeuralModel::SetDefaultMaxAudioBufferSize(size);
-
-		allocate_buffered_rings(size);
-	}
-
-	void Plugin::allocate_buffered_rings(int maxAudioBufferSize)
-	{
-		// Capacity needs to fit one full host buffer plus a partial block left
-		// over from the previous call (worst case kBufferedBlockSize - 1).
-		const size_t capacity = static_cast<size_t>(maxAudioBufferSize) + kBufferedBlockSize;
-		if (bufferedIn.size() < capacity)
-		{
-			bufferedIn.assign(capacity, 0.0f);
-		}
-		if (bufferedOut.size() < capacity)
-		{
-			bufferedOut.assign(capacity, 0.0f);
-		}
-		reset_buffered_rings();
-	}
-
-	void Plugin::reset_buffered_rings() noexcept
-	{
-		bufferedInFill = 0;
-		bufferedOutFill = 0;
 	}
 
 	void Plugin::process(uint32_t n_samples) noexcept
@@ -300,28 +265,6 @@ namespace NAM {
 			}
 		}
 
-		const bool bufferedModeNow = ports.buffered ? (*(ports.buffered) > 0.5f) : true;
-		if (bufferedModeNow != bufferedModePrev)
-		{
-			// Mode flipped at runtime: any samples queued in the rings would
-			// surface in the wrong path. Flush both sides; a brief click is
-			// acceptable for a user-driven toggle.
-			reset_buffered_rings();
-			bufferedModePrev = bufferedModeNow;
-		}
-
-		if (bufferedModeNow && currentModel != nullptr)
-		{
-			process_buffered(n_samples);
-		}
-		else
-		{
-			process_unbuffered(n_samples);
-		}
-	}
-
-	void Plugin::process_unbuffered(uint32_t n_samples) noexcept
-	{
 		float level;
 
 		float modelInputAdjustmentDB = 0;
@@ -430,112 +373,6 @@ namespace NAM {
 				ports.audio_out[i] = ports.audio_out[i] * level;
 			}
 		}
-	}
-
-	void Plugin::process_buffered(uint32_t n_samples) noexcept
-	{
-		// Defensive: if the host ever calls with a chunk bigger than what we
-		// pre-allocated for, fall back to the unbuffered path. Shouldn't happen
-		// in practice — bufSize maxBlockLength is honoured by mod-host.
-		if (n_samples + bufferedInFill > bufferedIn.size())
-		{
-			process_unbuffered(n_samples);
-			return;
-		}
-
-		const float modelInputAdjustmentDB = currentModel->GetRecommendedInputDBAdjustment();
-		const float modelLoudnessAdjustmentDB = currentModel->GetRecommendedOutputDBAdjustment();
-		const float desiredInputLevel = powf(10, (*(ports.input_level) + modelInputAdjustmentDB) * 0.05f);
-		const float desiredOutputLevel = powf(10, (*(ports.output_level) + modelLoudnessAdjustmentDB) * 0.05f);
-
-		// 1. Apply input level (with smoothing) and push into the input ring.
-		const bool inputSmoothing = fabs(desiredInputLevel - inputLevel) > SMOOTH_EPSILON;
-		float level = inputLevel;
-		float* inWrite = bufferedIn.data() + bufferedInFill;
-		if (inputSmoothing)
-		{
-			for (uint32_t i = 0; i < n_samples; i++)
-			{
-				level = (.99f * level) + (.01f * desiredInputLevel);
-				inWrite[i] = ports.audio_in[i] * level;
-			}
-			inputLevel = level;
-		}
-		else
-		{
-			level = inputLevel = desiredInputLevel;
-			for (uint32_t i = 0; i < n_samples; i++)
-			{
-				inWrite[i] = ports.audio_in[i] * level;
-			}
-		}
-		bufferedInFill += n_samples;
-
-		// 2. Process as many full blocks as we have queued. The model writes
-		//    directly into the output ring (Process supports distinct in/out
-		//    pointers), so we avoid an extra memcpy per block. Consumed input
-		//    samples accumulate in inOffset; we collapse them with a single
-		//    memmove after the loop instead of shifting once per block.
-		const size_t outCapacity = bufferedOut.size();
-		size_t inOffset = 0;
-		while (bufferedInFill - inOffset >= static_cast<size_t>(kBufferedBlockSize) &&
-		       bufferedOutFill + kBufferedBlockSize <= outCapacity)
-		{
-			currentModel->Process(bufferedIn.data() + inOffset,
-			                      bufferedOut.data() + bufferedOutFill,
-			                      kBufferedBlockSize);
-			inOffset += kBufferedBlockSize;
-			bufferedOutFill += kBufferedBlockSize;
-		}
-		if (inOffset > 0)
-		{
-			const size_t remaining = bufferedInFill - inOffset;
-			if (remaining > 0)
-			{
-				std::memmove(bufferedIn.data(),
-				             bufferedIn.data() + inOffset,
-				             remaining * sizeof(float));
-			}
-			bufferedInFill = remaining;
-		}
-
-		// 3. Drain up to n_samples from the output ring, applying output level
-		//    smoothing. If the ring doesn't yet hold enough (the typical case
-		//    on the first few callbacks after a flush), pad the tail with zeros
-		//    — that's the wrapper's intrinsic startup latency.
-		const uint32_t avail = static_cast<uint32_t>(std::min<size_t>(bufferedOutFill, n_samples));
-		const bool outputSmoothing = fabs(desiredOutputLevel - outputLevel) > SMOOTH_EPSILON;
-		level = outputLevel;
-		if (outputSmoothing)
-		{
-			for (uint32_t i = 0; i < avail; i++)
-			{
-				level = (.99f * level) + (.01f * desiredOutputLevel);
-				ports.audio_out[i] = bufferedOut[i] * level;
-			}
-			outputLevel = level;
-		}
-		else
-		{
-			level = outputLevel = desiredOutputLevel;
-			for (uint32_t i = 0; i < avail; i++)
-			{
-				ports.audio_out[i] = bufferedOut[i] * level;
-			}
-		}
-		for (uint32_t i = avail; i < n_samples; i++)
-		{
-			ports.audio_out[i] = 0.0f;
-		}
-
-		const size_t outRemaining = bufferedOutFill - avail;
-		if (outRemaining > 0)
-		{
-			std::memmove(bufferedOut.data(),
-			             bufferedOut.data() + avail,
-			             outRemaining * sizeof(float));
-		}
-		bufferedOutFill = outRemaining;
 	}
 
 	uint32_t Plugin::options_get(LV2_Handle, LV2_Options_Option*)
