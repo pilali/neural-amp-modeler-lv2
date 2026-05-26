@@ -9,7 +9,7 @@
 # once the tarball is cached it's never refetched, even if the branch tip
 # advances. Bump VERSION explicitly when you want a new build to pick up
 # new commits, and run `make neural-amp-modeler-dirclean` to be safe.
-NEURAL_AMP_MODELER_VERSION = 49f1081b931639e7c0f7a9e5a9e85226df9ee375
+NEURAL_AMP_MODELER_VERSION = 37eb9ed5f475792c4878c786229cc86a3fbfb979
 NEURAL_AMP_MODELER_SITE = https://github.com/pilali/neural-amp-modeler-lv2.git
 NEURAL_AMP_MODELER_SITE_METHOD = git
 NEURAL_AMP_MODELER_BUNDLES = neural_amp_modeler.lv2
